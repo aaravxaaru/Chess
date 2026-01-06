@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify, render_template_string
 
 app = Flask(__name__)
 
@@ -15,18 +15,98 @@ board = [
 
 turn = "white"
 
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Offline Chess</title>
+<style>
+body{font-family:Arial;text-align:center;background:#222;color:#fff}
+table{margin:auto;border-collapse:collapse}
+td{
+ width:60px;height:60px;font-size:40px;
+ text-align:center;cursor:pointer
+}
+.w{background:#f0d9b5;color:black}
+.b{background:#b58863;color:black}
+</style>
+</head>
+<body>
+
+<h1>♟️ Offline Chess</h1>
+<h3 id="turn">White's Turn</h3>
+
+<table id="board"></table>
+
+<script>
+let board = {{ board | tojson }};
+let turn = "{{ turn }}";
+let selected = null;
+
+const pieces = {
+ "r":"♜","n":"♞","b":"♝","q":"♛","k":"♚","p":"♟",
+ "R":"♖","N":"♘","B":"♗","Q":"♕","K":"♔","P":"♙"," ":""
+};
+
+function draw(){
+ let t=document.getElementById("board");
+ t.innerHTML="";
+ for(let i=0;i<8;i++){
+  let r=t.insertRow();
+  for(let j=0;j<8;j++){
+   let c=r.insertCell();
+   c.innerHTML=pieces[board[i][j]];
+   c.className=((i+j)%2==0)?"w":"b";
+   c.onclick=()=>clickCell(i,j);
+  }
+ }
+}
+
+function clickCell(x,y){
+ if(!selected){
+  selected={x,y};
+ } else {
+  fetch("/move",{
+   method:"POST",
+   headers:{"Content-Type":"application/json"},
+   body:JSON.stringify({
+    sx:selected.x, sy:selected.y,
+    ex:x, ey:y
+   })
+  })
+  .then(r=>r.json())
+  .then(d=>{
+   if(d.success){
+    board=d.board;
+    turn=d.turn;
+    document.getElementById("turn").innerText =
+     turn.charAt(0).toUpperCase()+turn.slice(1)+"'s Turn";
+    draw();
+   }
+  });
+  selected=null;
+ }
+}
+
+draw();
+</script>
+
+</body>
+</html>
+"""
+
 @app.route("/")
 def index():
-    return render_template("index.html", board=board, turn=turn)
+    return render_template_string(HTML, board=board, turn=turn)
 
 @app.route("/move", methods=["POST"])
 def move():
     global turn
-    data = request.json
-    sx, sy, ex, ey = data["sx"], data["sy"], data["ex"], data["ey"]
+    d = request.json
+    sx, sy, ex, ey = d["sx"], d["sy"], d["ex"], d["ey"]
 
     piece = board[sx][sy]
-
     if piece == " ":
         return jsonify(success=False)
 
@@ -38,9 +118,6 @@ def move():
 
     board[ex][ey] = piece
     board[sx][sy] = " "
-    turn = "black" if turn == "white" else "white"
+    turn = "black" if turn=="white" else "white"
 
     return jsonify(success=True, board=board, turn=turn)
-
-if __name__ == "__main__":
-    app.run(debug=True)
